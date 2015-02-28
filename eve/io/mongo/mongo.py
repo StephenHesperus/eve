@@ -162,26 +162,38 @@ class Mongo(DataLayer):
         # TODO should validate on unknown sort fields (mongo driver doesn't
         # return an error)
 
-        client_sort = {}
+        # client_sort should be type of list
+        client_sort = []
         spec = {}
 
         if req.sort:
             try:
-                # assume it's mongo syntax (ie. ?sort=[("name", 1)])
-                client_sort = ast.literal_eval(req.sort)
-            except ValueError:
-                # it's not mongo so let's see if it's a comma delimited string
-                # instead (ie. "?sort=-age, name").
-                sort = []
-                for sort_arg in [s.strip() for s in req.sort.split(",")]:
-                    if sort_arg[0] == "-":
-                        sort.append((sort_arg[1:], -1))
-                    else:
-                        sort.append((sort_arg, 1))
-                if len(sort) > 0:
-                    client_sort = sort
-            except Exception as e:
-                abort(400, description=debug_error_message(str(e)))
+                # use same syntax as 'where' (ie. ?sort={"name", 1}),
+                # but allow mongo syntax (ie. ?sort=[("name", 1)]
+                # check JSON format first because python tuple syntax will
+                # fail here,
+                # but double-quoted JSON string is unlikely fail when
+                # evaluated as Python literals.
+                client_sort_json = json.loads(req.sort)
+            except JSONDecodeError: # not json string
+                try:
+                    # assume it's mongo syntax (ie. ?sort=[("name", 1)])
+                    client_sort = ast.literal_eval(req.sort)
+                except ValueError:
+                    # it's not mongo so let's see if it's a comma delimited string
+                    # instead (ie. "?sort=-age, name").
+                    sort = []
+                    for sort_arg in [s.strip() for s in req.sort.split(",")]:
+                        if sort_arg[0] == "-":
+                            sort.append((sort_arg[1:], -1))
+                        else:
+                            sort.append((sort_arg, 1))
+                    if len(sort) > 0:
+                        client_sort = sort
+                except Exception as e:
+                    abort(400, description=debug_error_message(str(e)))
+            else:
+                client_sort = list(client_sort_json.items())
 
         if req.where:
             try:
